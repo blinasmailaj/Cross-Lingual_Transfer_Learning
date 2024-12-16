@@ -1,53 +1,45 @@
-import re
+from typing import List, Dict, Any  # Add this import at the top
 import nltk
-from nltk.tokenize import sent_tokenize
-from typing import List, Dict, Union
-import html
+import re
 from bs4 import BeautifulSoup
 import unicodedata
+
 
 class TextPreprocessor:
     def __init__(self):
         try:
-            nltk.data.find('tokenizers/punkt')
-        except LookupError:
             nltk.download('punkt')
+            nltk.download('stopwords')
+            self.stopwords = set(nltk.corpus.stopwords.words('english'))
+        except:
+            self.stopwords = set()
 
     def clean_text(self, text: str) -> str:
-        """Clean raw text by removing unwanted elements and normalizing."""
+        # Remove URLs
+        text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
+        
+        # Remove email addresses
+        text = re.sub(r'\S+@\S+', '', text)
+        
+        # Remove multiple spaces
+        text = re.sub(r'\s+', ' ', text)
+        
         # Remove HTML tags
         text = BeautifulSoup(text, "html.parser").get_text()
-        
-        # Unescape HTML entities
-        text = html.unescape(text)
         
         # Normalize unicode characters
         text = unicodedata.normalize('NFKD', text)
         
-        # Remove extra whitespace
-        text = re.sub(r'\s+', ' ', text)
-        
         # Remove special characters but keep punctuation
         text = re.sub(r'[^\w\s.,!?-]', '', text)
         
-        return text.strip()
-
-    def segment_sentences(self, text: str) -> List[str]:
-        """Split text into sentences."""
-        return sent_tokenize(text)
-
-    def truncate_text(self, text: str, max_length: int) -> str:
-        """Truncate text to max_length while keeping complete sentences."""
-        sentences = self.segment_sentences(text)
-        truncated_text = ""
+        # Convert to lowercase
+        text = text.lower()
         
-        for sentence in sentences:
-            if len(truncated_text) + len(sentence) + 1 <= max_length:
-                truncated_text += sentence + " "
-            else:
-                break
-                
-        return truncated_text.strip()
+        # Remove extra whitespace
+        text = ' '.join(text.split())
+        
+        return text.strip()
 
     def preprocess_for_training(
         self, 
@@ -56,14 +48,17 @@ class TextPreprocessor:
         max_text_length: int, 
         max_summary_length: int
     ) -> Dict[str, List[str]]:
-        """Preprocess texts and summaries for training."""
         processed_texts = []
         processed_summaries = []
         
         for text, summary in zip(texts, summaries):
             # Clean and truncate text
             cleaned_text = self.clean_text(text)
-            truncated_text = self.truncate_text(cleaned_text, max_text_length)
+            sentences = self.segment_sentences(cleaned_text)
+            
+            # Keep most important sentences (based on position and length)
+            important_sentences = self.select_important_sentences(sentences)
+            truncated_text = ' '.join(important_sentences)[:max_text_length]
             
             # Clean and truncate summary
             cleaned_summary = self.clean_text(summary)
@@ -76,3 +71,16 @@ class TextPreprocessor:
             "texts": processed_texts,
             "summaries": processed_summaries
         }
+
+    def select_important_sentences(self, sentences: List[str]) -> List[str]:
+        # Simple importance scoring based on sentence length and position
+        scored_sentences = []
+        for i, sentence in enumerate(sentences):
+            length_score = min(len(sentence.split()) / 20.0, 1.0)
+            position_score = 1.0 - (i / len(sentences))
+            score = (length_score + position_score) / 2
+            scored_sentences.append((score, sentence))
+        
+        # Sort by score and take top sentences
+        scored_sentences.sort(reverse=True)
+        return [sent for _, sent in scored_sentences[:5]]

@@ -1,14 +1,16 @@
+# train.py
 import torch
-from torch.optim import AdamW
+from torch.cuda.amp import GradScaler, autocast
 from transformers import get_cosine_schedule_with_warmup
 from tqdm import tqdm
 import os
-from typing import Dict, Any, Tuple, List
-from utils.metrics import compute_rouge_scores
-import numpy as np
 import logging
 import json
 from datetime import datetime
+from typing import Dict, Any, Tuple, List
+import numpy as np
+from utils.metrics import compute_rouge_scores
+import wandb
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,12 +36,16 @@ class TrainingManager:
         self.tokenizer = tokenizer
         self.visualizer = visualizer
         
+        # Initialize mixed precision training
+        self.scaler = GradScaler()
+        
         # Initialize tracking metrics
         self.best_val_loss = float('inf')
+        self.best_rouge_score = 0.0
         self.train_losses = []
         self.val_losses = []
-        self.epochs = []
-        self.all_metrics = []
+        self.rouge_scores = []
+        self.current_patience = 0
         
         # Setup training parameters
         self.num_training_steps = len(train_loader) * config['num_epochs']
@@ -52,45 +58,63 @@ class TrainingManager:
             num_training_steps=self.num_training_steps
         )
         
-        # Create directories if they don't exist
+        # Create output directories
         os.makedirs(config['checkpoint_dir'], exist_ok=True)
         os.makedirs(config['output_dir'], exist_ok=True)
+        
+        # Setup curriculum learning
+        self.curriculum = {
+            'epoch': 0,
+            'max_length': config['max_source_length'] // 2,
+            'difficulty': 0.0
+        }
+        
+        # Initialize metrics tracking
+        self.metrics_history = {
+            'train_loss': [],
+            'val_loss': [],
+            'rouge_scores': [],
+            'learning_rates': []
+        }
 
-    def save_checkpoint(self, epoch: int, val_loss: float, checkpoint_type: str = 'best') -> str:
-        """Save model checkpoint"""
+    def save_checkpoint(self, epoch: int, val_loss: float, rouge_scores: Dict[str, float], checkpoint_type: str = 'best') -> str:
+        """Save model checkpoint with metrics"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         checkpoint_path = os.path.join(
-            self.config['checkpoint_dir'], 
+            self.config['checkpoint_dir'],
             f'{checkpoint_type}_model_{timestamp}.pt'
         )
         
-        checkpoint = {
+        # Save checkpoint
+        torch.save({
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
-            'config': self.config,
+            'scaler_state_dict': self.scaler.state_dict(),
             'val_loss': val_loss,
-            'training_metrics': {
-                'train_losses': self.train_losses,
-                'val_losses': self.val_losses,
-                'epochs': self.epochs,
-                'all_metrics': self.all_metrics
-            }
-        }
+            'rouge_scores': rouge_scores,
+            'config': self.config,
+            'metrics_history': self.metrics_history,
+            'curriculum': self.curriculum
+        }, checkpoint_path)
         
-        torch.save(checkpoint, checkpoint_path)
-        logger.info(f"Saved {checkpoint_type} model checkpoint to {checkpoint_path}")
-        
-        # Save training metrics separately for easy access
-        metrics_path = os.path.join(
-            self.config['output_dir'], 
-            f'training_metrics_{timestamp}.json'
-        )
-        with open(metrics_path, 'w') as f:
-            json.dump(checkpoint['training_metrics'], f, indent=4)
-        
+        logger.info(f"Saved {checkpoint_type} checkpoint to {checkpoint_path}")
         return checkpoint_path
+
+    def _update_curriculum(self, epoch: int) -> None:
+        """Update curriculum learning parameters"""
+        if epoch > self.curriculum['epoch']:
+            self.curriculum['epoch'] = epoch
+            # Gradually increase difficulty
+            self.curriculum['difficulty'] = min(1.0, epoch / (self.config['num_epochs'] * 0.7))
+            # Gradually increase max sequence length
+            self.curriculum['max_length'] = int(
+                self.config['max_source_length'] * 
+                (0.5 + 0.5 * self.curriculum['difficulty'])
+            )
+            logger.info(f"Updated curriculum - Difficulty: {self.curriculum['difficulty']:.2f}, "
+                       f"Max Length: {self.curriculum['max_length']}")
 
     def train_epoch(self, epoch: int) -> float:
         """Train for one epoch"""
@@ -99,24 +123,32 @@ class TrainingManager:
         epoch_steps = 0
         
         with tqdm(total=len(self.train_loader), desc=f"Epoch {epoch + 1}") as pbar:
-            for i, batch in enumerate(self.train_loader):
+            for batch_idx, batch in enumerate(self.train_loader):
                 try:
                     # Move batch to device
                     batch = {k: v.to(self.device) for k, v in batch.items()}
                     
                     # Forward pass
-                    outputs = self.model(**batch)
+                    outputs = self.model(
+                        input_ids=batch['input_ids'],
+                        attention_mask=batch['attention_mask'],
+                        labels=batch['labels']
+                    )
+                    
+                    # Get loss from outputs
                     loss = outputs.loss / self.config['gradient_accumulation_steps']
                     
                     # Backward pass
                     loss.backward()
                     
-                    # Update weights if gradient accumulation steps reached
-                    if (i + 1) % self.config['gradient_accumulation_steps'] == 0:
+                    if (batch_idx + 1) % self.config['gradient_accumulation_steps'] == 0:
+                        # Clip gradients
                         torch.nn.utils.clip_grad_norm_(
-                            self.model.parameters(), 
+                            self.model.parameters(),
                             self.config['max_grad_norm']
                         )
+                        
+                        # Optimizer step
                         self.optimizer.step()
                         self.scheduler.step()
                         self.optimizer.zero_grad()
@@ -128,29 +160,27 @@ class TrainingManager:
                     # Update progress bar
                     pbar.update(1)
                     pbar.set_postfix({
-                        'loss': loss.item(),
-                        'lr': self.scheduler.get_last_lr()[0]
+                        'loss': f"{loss.item():.4f}",
+                        'lr': f"{self.scheduler.get_last_lr()[0]:.2e}"
                     })
                     
                     # Memory cleanup
-                    del outputs
-                    del loss
-                    if hasattr(torch.cuda, 'empty_cache'):
-                        torch.cuda.empty_cache()
-                        
+                    del outputs, loss
+                    torch.cuda.empty_cache()
+                    
                 except RuntimeError as e:
                     if "out of memory" in str(e):
+                        logger.warning(f"OOM in batch {batch_idx}, skipping...")
                         if hasattr(torch.cuda, 'empty_cache'):
                             torch.cuda.empty_cache()
-                        logger.warning("Out of memory, skipping batch")
                         self.optimizer.zero_grad()
                         continue
                     raise e
         
         return total_loss / epoch_steps
-
+    
     def validate(self) -> Tuple[float, Dict[str, float]]:
-        """Run validation"""
+        """Run validation with metrics"""
         self.model.eval()
         total_val_loss = 0
         val_steps = 0
@@ -164,19 +194,21 @@ class TrainingManager:
                         # Move batch to device
                         batch = {k: v.to(self.device) for k, v in batch.items()}
                         
-                        # Forward pass
-                        outputs = self.model(**batch)
-                        loss = outputs.loss
+                        # Forward pass with mixed precision
+                        with autocast():
+                            outputs = self.model(**batch)
+                            loss = outputs.loss
                         
-                        # Generate predictions
+                        # Generate summaries
                         generated_ids = self.model.generate_summary(
                             batch['input_ids'],
-                            batch['attention_mask']
+                            batch['attention_mask'],
+                            language_id=batch['language_id']
                         )
                         
                         # Decode predictions and references
                         predictions = self.tokenizer.batch_decode(
-                            generated_ids, 
+                            generated_ids,
                             skip_special_tokens=True
                         )
                         references = self.tokenizer.batch_decode(
@@ -191,28 +223,25 @@ class TrainingManager:
                         val_steps += 1
                         
                         pbar.update(1)
-                        pbar.set_postfix({'loss': loss.item()})
+                        pbar.set_postfix({'loss': f"{loss.item():.4f}"})
                         
                     except RuntimeError as e:
                         if "out of memory" in str(e):
-                            if hasattr(torch.cuda, 'empty_cache'):
-                                torch.cuda.empty_cache()
-                            logger.warning("Out of memory during validation, skipping batch")
+                            logger.warning("OOM during validation, skipping batch")
+                            torch.cuda.empty_cache()
                             continue
                         raise e
         
+        # Calculate metrics
         avg_val_loss = total_val_loss / val_steps
         rouge_scores = compute_rouge_scores(all_predictions, all_references)
         
         return avg_val_loss, rouge_scores
 
-    def train(self) -> Tuple[List[float], List[float], List[Dict[str, float]]]:
+    def train(self) -> None:
         """Main training loop"""
         logger.info(f"Starting training on device: {self.device}")
         logger.info(f"Total training steps: {self.num_training_steps}")
-        
-        patience_counter = 0
-        best_checkpoint_path = None
         
         try:
             for epoch in range(self.config['num_epochs']):
@@ -223,52 +252,58 @@ class TrainingManager:
                 # Validation phase
                 avg_val_loss, rouge_scores = self.validate()
                 self.val_losses.append(avg_val_loss)
-                self.epochs.append(epoch + 1)
-                self.all_metrics.append(rouge_scores)
+                self.rouge_scores.append(rouge_scores)
                 
-                # Print metrics
+                # Update metrics history
+                self.metrics_history['train_loss'].append(avg_train_loss)
+                self.metrics_history['val_loss'].append(avg_val_loss)
+                self.metrics_history['rouge_scores'].append(rouge_scores)
+                self.metrics_history['learning_rates'].append(self.scheduler.get_last_lr()[0])
+                
+                # Log metrics
                 logger.info(f"\nEpoch {epoch + 1} metrics:")
                 logger.info(f"Average training loss: {avg_train_loss:.4f}")
                 logger.info(f"Average validation loss: {avg_val_loss:.4f}")
-                logger.info("ROUGE Scores:", rouge_scores)
+                logger.info("ROUGE Scores:")
+                for metric, score in rouge_scores.items():
+                    logger.info(f"{metric}: {score:.4f}")
                 
-                # Visualize progress
+                # Save visualization
                 self.visualizer.plot_training_progress(
                     self.train_losses,
                     self.val_losses,
-                    self.epochs
+                    list(range(1, epoch + 2))
                 )
                 self.visualizer.plot_rouge_scores(rouge_scores)
                 
-                # Save checkpoint if best model
-                if avg_val_loss < self.best_val_loss:
-                    self.best_val_loss = avg_val_loss
-                    patience_counter = 0
-                    best_checkpoint_path = self.save_checkpoint(
-                        epoch,
-                        avg_val_loss,
-                        'best'
-                    )
+                # Check for best model
+                rouge_avg = np.mean(list(rouge_scores.values()))
+                if rouge_avg > self.best_rouge_score:
+                    self.best_rouge_score = rouge_avg
+                    self.current_patience = 0
+                    self.save_checkpoint(epoch, avg_val_loss, rouge_scores, 'best')
                 else:
-                    patience_counter += 1
+                    self.current_patience += 1
                 
                 # Early stopping check
-                if patience_counter >= self.config['early_stopping_patience']:
+                if self.current_patience >= self.config['early_stopping_patience']:
                     logger.info(f"Early stopping triggered after {epoch + 1} epochs")
                     break
                 
             # Save final model
-            final_checkpoint_path = self.save_checkpoint(
-                self.config['num_epochs'], 
+            self.save_checkpoint(
+                self.config['num_epochs'],
                 avg_val_loss,
+                rouge_scores,
                 'final'
             )
             
         except KeyboardInterrupt:
             logger.info("Training interrupted by user")
-            interrupt_checkpoint_path = self.save_checkpoint(
+            self.save_checkpoint(
                 epoch,
                 avg_val_loss,
+                rouge_scores,
                 'interrupted'
             )
             
@@ -277,11 +312,15 @@ class TrainingManager:
             raise
             
         finally:
+            # Save training metrics
+            metrics_path = os.path.join(self.config['output_dir'], 'training_metrics.json')
+            with open(metrics_path, 'w') as f:
+                json.dump(self.metrics_history, f, indent=2)
+            
             if hasattr(torch.cuda, 'empty_cache'):
                 torch.cuda.empty_cache()
         
         logger.info("Training completed!")
-        return self.train_losses, self.val_losses, self.all_metrics
 
 def train_model(
     config: Dict[str, Any],
@@ -292,7 +331,7 @@ def train_model(
     device: torch.device,
     tokenizer: Any,
     visualizer: Any
-) -> Tuple[List[float], List[float], List[Dict[str, float]]]:
+) -> None:
     """Wrapper function to initialize and run training"""
     trainer = TrainingManager(
         config,
@@ -304,4 +343,4 @@ def train_model(
         tokenizer,
         visualizer
     )
-    return trainer.train()
+    trainer.train()

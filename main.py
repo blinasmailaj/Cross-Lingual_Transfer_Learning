@@ -6,10 +6,10 @@ from config import get_config
 from data.data_loader import get_datasets, create_data_loaders
 from models.summarizer import CrossLingualSummarizer
 from train import train_model
-from utils.visualization import ResultVisualizer
 import wandb
 from predict import batch_predict
 import os
+from bs4 import BeautifulSoup
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -60,8 +60,6 @@ def main():
         weight_decay=config['weight_decay']
     )
     
-    # Initialize visualization
-    visualizer = ResultVisualizer(config)
     
     # Train model
     print("Starting training...")
@@ -73,7 +71,6 @@ def main():
         optimizer=optimizer,
         device=device,
         tokenizer=tokenizer,
-        visualizer=visualizer
     )
     # Load configuration
     config = get_config()
@@ -116,9 +113,6 @@ def main():
         weight_decay=config['weight_decay']
     )
     
-    # Initialize visualization
-    visualizer = ResultVisualizer(config)
-    
     # Train model
     print("Starting training...")
     train_model(
@@ -129,12 +123,11 @@ def main():
         optimizer=optimizer,
         device=device,
         tokenizer=tokenizer,
-        visualizer=visualizer
     )
     
     # Final evaluation
     print("Performing final evaluation...")
-    checkpoint = torch.load(os.path.join(config['checkpoint_dir'], 'best_model.pt'))
+    checkpoint = torch.load(os.path.join(config['checkpoint_dir'], 'final_model_20241218_054329.pt'))
     model.load_state_dict(checkpoint['model_state_dict'])
     
     # Generate example predictions

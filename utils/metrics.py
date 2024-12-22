@@ -1,4 +1,3 @@
-# metrics.py
 from rouge_score import rouge_scorer
 import numpy as np
 from typing import Dict, List
@@ -62,7 +61,7 @@ def compute_bleu_score(predictions: List[str], references: List[str]) -> float:
     )
 
 def compute_language_metrics(predictions: List[str], references: List[str], language: str) -> Dict[str, float]:
-    """Compute language-specific metrics"""
+    """Compute metrics"""
     # Get ROUGE scores
     rouge_scores = compute_rouge_scores(predictions, references)
     

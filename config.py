@@ -10,7 +10,7 @@ def get_config():
         'hidden_size': 512,
         
         # Training Configuration
-        'learning_rate': 1e-5,  # Reduced from 2e-5
+        'learning_rate': 1e-5,
         'num_epochs': 10,
         'warmup_ratio': 0.2,
         'max_grad_norm': 0.5,
@@ -34,7 +34,7 @@ def get_config():
         },
         
         # Dataset Configuration
-        'train_size': 20000,  # Increased dataset size
+        'train_size': 20000,
         'val_size': 2000,
         'test_size': 1000,
         'max_source_length': 768,

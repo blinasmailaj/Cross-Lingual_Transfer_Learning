@@ -49,10 +49,9 @@ class CrossLingualSummarizer(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
-            return_dict=True  # Make sure we return a dictionary
+            return_dict=True
         )
         
-        # No need to handle hidden states here as we're just using the base model outputs
         return outputs
 
     def generate_summary(

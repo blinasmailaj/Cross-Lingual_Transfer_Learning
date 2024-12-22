@@ -6,10 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 def find_available_checkpoints(checkpoint_dir):
-    logging.info(f'sddasd{checkpoint_dir}')
-    """Find and validate available checkpoint files"""
     checkpoint_files = glob.glob(os.path.join(checkpoint_dir, "*.pt"))
-    logging.info(f'sddasd{checkpoint_files}')
     if not checkpoint_files:
         logger.warning(f"No checkpoint files found in {checkpoint_dir}")
         return []
@@ -53,7 +50,6 @@ def load_checkpoint(checkpoint_path, model, device):
             logger.warning(f"Second loading attempt failed: {str(e2)}")
             
             try:
-                # Last resort: pickle loading
                 import pickle
                 with open(checkpoint_path, 'rb') as f:
                     checkpoint = torch.load(f, map_location=device, pickle_module=pickle)
@@ -70,14 +66,12 @@ def safe_save_checkpoint(model, optimizer, config, filepath):
     temp_path = filepath + '.tmp'
     
     try:
-        # Save to temporary file first
         torch.save({
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'config': config,
         }, temp_path, _use_new_zipfile_serialization=True)
         
-        # If save was successful, rename to final filename
         os.replace(temp_path, filepath)
         logger.info(f"Checkpoint saved successfully to {filepath}")
         

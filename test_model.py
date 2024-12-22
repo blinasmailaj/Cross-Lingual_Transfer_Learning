@@ -91,26 +91,26 @@ def run_tests():
     """
     # Test data
     test_cases = [
-        # {   
-        #     "lang": "al", 
-        #     "text": "Një grua e re që humbi shikimin në moshën 12 vjeç ka ndihmuar për të përmirësuar të drejtat e njerëzve me aftësi të kufizuara. Pavarësisht sfidave që ka përjetuar, ajo ndoqi studimet e larta dhe fitoi një diplomë në psikologji. Përpjekjet e saj çuan në krijimin e një fondacioni që mbështet individët me aftësi të kufizuara, duke promovuar përfshirjen dhe aksesin në shkolla dhe vende pune. Përmes përpjekjeve të saj për mbrojtjen e të drejtave të njerëzve me aftësi të kufizuara, ajo është njohur me disa çmime, duke u bërë simbol shprese për shumë njerëz.", 
-        #     "reference": "Një grua e re që humbi shikimin në moshën 12 vjeç u bë avokate për të drejtat e personave me aftësi të kufizuara, duke fituar një diplomë në psikologji dhe duke krijuar një fondacion për të promovuar përfshirjen dhe qasjen." 
-        # },
+        {   
+            "lang": "al", 
+            "text": "Një grua e re që humbi shikimin në moshën 12 vjeç ka ndihmuar për të përmirësuar të drejtat e njerëzve me aftësi të kufizuara. Pavarësisht sfidave që ka përjetuar, ajo ndoqi studimet e larta dhe fitoi një diplomë në psikologji. Përpjekjet e saj çuan në krijimin e një fondacioni që mbështet individët me aftësi të kufizuara, duke promovuar përfshirjen dhe aksesin në shkolla dhe vende pune. Përmes përpjekjeve të saj për mbrojtjen e të drejtave të njerëzve me aftësi të kufizuara, ajo është njohur me disa çmime, duke u bërë simbol shprese për shumë njerëz.", 
+            "reference": "Një grua e re që humbi shikimin në moshën 12 vjeç u bë avokate për të drejtat e personave me aftësi të kufizuara, duke fituar një diplomë në psikologji dhe duke krijuar një fondacion për të promovuar përfshirjen dhe qasjen." 
+        },
         # {
         #     "lang": "al",
         #     "text": "Një mësues në një shkollë të vogël në veri të Shqipërisë ka implementuar një metodë të re mësimdhënieje për të ndihmuar nxënësit të mësojnë më mirë. Duke përdorur teknologjinë dhe qasjen praktike, ai ka arritur të rrisë përfshirjen dhe rezultatet e nxënësve. Kjo qasje është vlerësuar nga komuniteti lokal dhe është propozuar për t'u përdorur edhe në shkolla të tjera.",
         #     "reference": "Një mësues në veri të Shqipërisë përdori teknologjinë për të rritur përfshirjen dhe rezultatet e nxënësve, duke implementuar një metodë të re mësimdhënieje."
         # },
-        # {   
-        #     "lang": "al", 
-        #     "text": "Një grua shqiptare që ka kaluar vite si emigrante ka hapur një biznes të suksesshëm në Shqipëri. Ajo përdori përvojën e saj për të krijuar një kompani që mbështet gratë sipërmarrëse duke ofruar trajnime dhe burime për të filluar biznese të reja. Kompania e saj është bërë një shembull frymëzimi për të rinjtë dhe gratë në të gjithë vendin.", 
-        #     "reference": "Një grua shqiptare emigrante hapi një biznes të suksesshëm në Shqipëri, duke mbështetur gratë sipërmarrëse me trajnime dhe burime."
+        # {
+        #     "lang": "al",
+        #     "text": "Një djalë nga një fshat i vogël në Shqipëri ka krijuar një aplikacion që ndihmon fermerët të monitorojnë kushtet e tokës dhe të rrisin prodhimin. Ai filloi të punonte në këtë projekt gjatë studimeve në shkencat kompjuterike dhe tani aplikacioni është përdorur nga qindra fermerë. Ky sukses e ka bërë atë të njohur në komunitetin e teknologjisë dhe ai ka marrë disa çmime ndërkombëtare.",
+        #     "reference": "Një djalë nga një fshat shqiptar krijoi një aplikacion që ndihmon fermerët të përmirësojnë prodhimin dhe fitoi njohje ndërkombëtare."
         # },
-        {
-            "lang": "al",
-            "text": "Një startup inovativ në Tiranë ka zhvilluar një aplikacion që ndihmon fermerët të monitorojnë kushtet e tokës dhe të optimizojnë ujitjen. Aplikacioni përdor sensorë të vendosur në tokë për të matur lagështirën dhe përbërjen kimike, duke u dërguar fermerëve të dhëna në kohë reale përmes telefonave të tyre. Që nga lansimi para gjashtë muajsh, 500 fermerë kanë adoptuar këtë teknologji, duke raportuar kursime të konsiderueshme në ujë dhe rritje të prodhimit.",
-            "reference": "Një startup në Tiranë ka krijuar një aplikacion që përdor sensorë për të ndihmuar fermerët në monitorimin e kushteve të tokës dhe optimizimin e ujitjes."
-        }
+        # {
+        #     "lang": "al",
+        #     "text": "Një mësues në një shkollë të vogël ka zhvilluar një metodë të re mësimdhënieje për të ndihmuar nxënësit me vështirësi të të mësuarit. Ai përdori teknologjinë për të krijuar materiale interaktive që bëjnë procesin më të lehtë dhe argëtues. Kjo qasje është vlerësuar nga komuniteti arsimor dhe është propozuar për t'u aplikuar në shkolla të tjera.",
+        #     "reference": "Një mësues krijoi një metodë mësimdhënieje interaktive për nxënësit me vështirësi të të mësuarit, duke përdorur teknologjinë."
+        # }
     ]
 
     tester = SummaryTester("checkpoints/best_model_20241218_075651.pt")

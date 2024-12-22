@@ -25,7 +25,6 @@ class TrainingManager:
         optimizer: torch.optim.Optimizer,
         device: torch.device,
         tokenizer: Any,
-        visualizer: Any
     ):
         self.config = config
         self.model = model
@@ -34,7 +33,6 @@ class TrainingManager:
         self.optimizer = optimizer
         self.device = device
         self.tokenizer = tokenizer
-        self.visualizer = visualizer
         
         # Initialize mixed precision training
         self.scaler = GradScaler()
@@ -330,7 +328,6 @@ def train_model(
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     tokenizer: Any,
-    visualizer: Any
 ) -> None:
     """Wrapper function to initialize and run training"""
     trainer = TrainingManager(
@@ -341,6 +338,5 @@ def train_model(
         optimizer,
         device,
         tokenizer,
-        visualizer
     )
     trainer.train()

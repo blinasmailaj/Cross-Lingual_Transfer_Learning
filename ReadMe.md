@@ -2,8 +2,7 @@
 
 ## Institutional Information
 
-This research project was conducted at the University of Prishtina "Hasan Prishtina" within the Faculty of Computer Science. The work was completed as part of the Natural Language Processing course in the Master's Degree program. The project was developed by Florian Halimi as the primary contributor.
-
+This research project was conducted at the University of Prishtina "Hasan Prishtina" within the Faculty of Computer Science. The work was completed as part of the Natural Language Processing course in the Master's Degree program.
 ### Academic Details
 - **University**: University of Prishtina "Hasan Prishtina"
 - **Faculty**: Faculty of Electrical and Computer Engineering
@@ -50,9 +49,9 @@ A distinguishing feature of our dataset is its professional quality, derived fro
 ### Dataset Statistics
 - **Total Size**: 311,971 original pairs
 - **Used Subset**:
-  - Training: 10,000 examples
-  - Validation: 1,000 examples
-  - Test: 500 examples
+  - Training: 20,000 examples
+  - Validation: 2,000 examples
+  - Test: 1000 examples
 
 The dataset exhibits rich textual characteristics, with articles averaging 781 tokens in length (median 676) and ranging from 108 to 2,391 tokens. Summaries maintain a concise format, averaging 56 tokens (median 52) with a range of 9 to 128 tokens.
 
@@ -91,9 +90,9 @@ The base mT5 model features a hidden size of 768 dimensions, allowing for rich r
 Our key architectural decisions include:
 
 1. **Base Model Configuration**:
-   - Implementation: mT5-base (580M parameters)
+   - Implementation: google/mT5-large (580M parameters)
    - Encoder-Decoder: 12 layers each
-   - Hidden Dimensions: 768
+   - Hidden Dimensions: 512
    - Attention Heads: 12
    - Feed-forward Size: 3,072
    - Vocabulary: Sentencepiece-based multilingual
@@ -101,14 +100,14 @@ Our key architectural decisions include:
 2. **Training Parameters**:
 ```python
 config = {
-    'model_name': 'google/mt5-base',
-    'max_length': 128,               # Optimized for summary length
-    'batch_size': 8,                 # Balanced for memory efficiency
-    'gradient_accumulation_steps': 2, # Effective batch size of 16
-    'learning_rate': 3e-5,           # Conservative learning rate
-    'num_epochs': 3,                 # Focused training period
-    'warmup_ratio': 0.1,             # Gradual learning rate warmup
-    'max_grad_norm': 1.0,            # Gradient clipping for stability
+    'model_name': 'google/mt5-large',
+    'max_length': 768,               # Optimized for summary length
+    'batch_size': 4,                 # Balanced for memory efficiency
+    'gradient_accumulation_steps': 8, # Effective batch size of 16
+    'learning_rate': 1e-5,           # Conservative learning rate
+    'num_epochs': 10,                 # Focused training period
+    'warmup_ratio': 0.2,             # Gradual learning rate warmup
+    'max_grad_norm': 0.5,            # Gradient clipping for stability
     'weight_decay': 0.01             # L2 regularization
 }
 ```
@@ -159,9 +158,9 @@ The model demonstrates several key strengths in this example:
    - Appropriate level of detail
 
 4. **ROUGE Metrics for this Example**:
-   - ROUGE-1: 0.4645 (Strong unigram overlap)
-   - ROUGE-2: 0.3725 (Excellent bigram preservation)
-   - ROUGE-L: 0.4251 (Good sequence maintenance)
+   - ROUGE-1: 0.6076 (Strong unigram overlap)
+   - ROUGE-2: 0.4935 (Excellent bigram preservation)
+   - ROUGE-L: 0.5570 (Good sequence maintenance)
 
 The model successfully condenses a three-sentence input into a single, informative sentence that captures the essence of the story. Particularly noteworthy is the preservation of the subject's key characteristic (vision loss at age 12) while maintaining the impact of her achievements (improving rights for people with disabilities).
 
@@ -199,7 +198,7 @@ The implementation achieves impressive efficiency metrics, operating with just 6
 - Memory usage: 2.8GB GPU RAM
 
 ### Training Performance
-- Training time: 24 hours on single V100
+- Training time: 44 - 55 hours on single V100
 - Convergence: Epoch 7 of 10
 - Best checkpoint: 35,000 steps
 - Early stopping triggered: No
@@ -220,13 +219,10 @@ pip install -r requirements.txt
 ### Usage Instructions
 ```bash
 # Training
-python main.py --mode train
+python train.py
 
 # Testing
-python main.py --mode test
-
-# Prediction
-python predict.py --input "Your text here"
+python test.py
 ```
 
 ## Future Developments

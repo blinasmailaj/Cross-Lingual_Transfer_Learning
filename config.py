@@ -29,9 +29,9 @@ def get_config():
         'seed': 42,
         
         # Directory Configuration
-        'checkpoint_dir': 'checkpoints',  # Added this line
+        'checkpoint_dir': 'checkpoints',
         'output_dir': 'outputs',
-        'log_dir': 'logs',  # Optional, added for completeness
+        'log_dir': 'logs',
         
         # Additional Configuration
         'use_wandb': False,

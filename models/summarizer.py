@@ -1,10 +1,8 @@
-# models/summarizer.py
 import torch
 import torch.nn as nn
 from transformers import MT5ForConditionalGeneration
 from typing import Dict, Any, Optional, Tuple, Union
 import logging
-from .cross_lingual_adapter import CrossLingualAdapter  # Updated import
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,33 +18,24 @@ class CrossLingualSummarizer(nn.Module):
         
         # Initialize language-specific adapters
         d_model = self.model.config.d_model
-        self.adapter = CrossLingualAdapter(self.model.config)
+        self.en_adapter = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.LayerNorm(d_model // 2),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(d_model // 2, d_model)
+        )
         
-        # Language-specific output layers
-        self.language_output_projections = nn.ModuleDict({
-            'en': nn.Linear(d_model, d_model),
-            'sq': nn.Linear(d_model, d_model)
-        })
+        self.sq_adapter = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.LayerNorm(d_model // 2),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(d_model // 2, d_model)
+        )
         
-        # Loss weights for different languages
-        self.language_loss_weights = {
-            'en': 1.0,
-            'sq': 1.2  # Higher weight for low-resource language
-        }
-
-    def compute_language_specific_loss(self, outputs, labels, language_id):
-        """Compute additional loss term for low-resource language"""
-        logits = outputs.logits
-        loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
-        
-        # Add language-specific penalty for rare tokens
-        if language_id == 1:  # Albanian
-            rare_token_mask = (labels != -100) & (labels < 1000)  # Adjust token ID range as needed
-            if rare_token_mask.any():
-                rare_token_loss = loss_fct(logits.view(-1, logits.size(-1))[rare_token_mask.view(-1)], 
-                                         labels.view(-1)[rare_token_mask.view(-1)])
-                return rare_token_loss
-        return 0.0
+        # Language embeddings
+        self.language_embeddings = nn.Embedding(2, d_model)
 
     def forward(
         self,
@@ -60,52 +49,62 @@ class CrossLingualSummarizer(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
-            return_dict=True,
-            output_hidden_states=True
+            return_dict=True  # Make sure we return a dictionary
         )
         
-        # Apply language-specific adapter
-        hidden_states = outputs.hidden_states[-1]
-        adapted_hidden_states = self.adapter(hidden_states, language_id)
-        
-        # Apply language-specific output projection
-        lang_key = 'sq' if language_id == 1 else 'en'
-        final_hidden_states = self.language_output_projections[lang_key](adapted_hidden_states)
-        
-        # Compute loss with language-specific weighting
-        if labels is not None:
-            base_loss = outputs.loss
-            lang_specific_loss = self.compute_language_specific_loss(outputs, labels, language_id)
-            loss_weight = self.language_loss_weights[lang_key]
-            total_loss = base_loss * loss_weight + 0.1 * lang_specific_loss
-            outputs.loss = total_loss
-        
+        # No need to handle hidden states here as we're just using the base model outputs
         return outputs
 
-def generate_summary(
-    self,
-    input_ids,
-    attention_mask,
-    language_id=None,
-    **kwargs
-):
-    try:
-        # Create proper cache for generation
-        cache = None
-        if hasattr(self.model, 'create_cache'):
-            cache = self.model.create_cache()
-        elif hasattr(self.model, 'encoder_decoder_cache'):
-            cache = self.model.encoder_decoder_cache
+    def generate_summary(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        language_id: Optional[torch.Tensor] = None,
+        num_beams: int = 4,
+        max_length: int = 150,
+        min_length: int = 30,
+        length_penalty: float = 2.0,
+        early_stopping: bool = True,
+        no_repeat_ngram_size: int = 3
+    ) -> torch.Tensor:
+        """Generate summaries"""
+        try:
+            return self.model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                num_beams=num_beams,
+                max_length=max_length,
+                min_length=min_length,
+                length_penalty=length_penalty,
+                early_stopping=early_stopping,
+                no_repeat_ngram_size=no_repeat_ngram_size
+            )
+        except Exception as e:
+            logger.error(f"Error in summary generation: {str(e)}")
+            raise
 
-        generation_config = self.config['generation']
-        outputs = self.model.generate(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            past_key_values_cache=cache if cache else None,  # Use new cache format
-            **{**generation_config, **kwargs}
-        )
-        
-        return outputs
-    except Exception as e:
-        logger.error(f"Error in summary generation: {str(e)}")
-        raise
+    def save_model(self, path: str) -> None:
+        """Save the model"""
+        try:
+            torch.save({
+                'model_state_dict': self.model.state_dict(),
+                'en_adapter_state_dict': self.en_adapter.state_dict(),
+                'sq_adapter_state_dict': self.sq_adapter.state_dict(),
+                'language_embeddings_state_dict': self.language_embeddings.state_dict(),
+                'config': self.config
+            }, path)
+        except Exception as e:
+            logger.error(f"Error saving model: {str(e)}")
+            raise
+
+    def load_model(self, path: str) -> None:
+        """Load the model"""
+        try:
+            checkpoint = torch.load(path)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.en_adapter.load_state_dict(checkpoint['en_adapter_state_dict'])
+            self.sq_adapter.load_state_dict(checkpoint['sq_adapter_state_dict'])
+            self.language_embeddings.load_state_dict(checkpoint['language_embeddings_state_dict'])
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            raise

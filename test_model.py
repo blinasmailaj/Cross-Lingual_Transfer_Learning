@@ -4,49 +4,53 @@ from models.summarizer import CrossLingualSummarizer
 from config import get_config
 import logging
 import os
+import re
 from rouge_score import rouge_scorer
 from typing import Dict, Any
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def clean_generated_summary(generated_text: str) -> str:
+    cleaned_text = re.sub(r"<extra_id_\d+>", "", generated_text)
+    cleaned_text = re.sub(r"(<\w+>)+", "", cleaned_text)
+    cleaned_text = re.sub(r"(\.|!|\?|\s){2,}", r"\1", cleaned_text)
+    cleaned_text = re.sub(r"\b(\w+)( \1\b)+", r"\1", cleaned_text)
+    return cleaned_text.strip()
+
 class SummaryTester:
     def __init__(self, checkpoint_path: str):
         self.config = get_config()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        logger.info(f"Using device: {self.device}")
-        
-        # Initialize tokenizer
+
         self.tokenizer = MT5Tokenizer.from_pretrained(self.config['model_name'])
-        
-        # Load model
+
         self.model = self._load_model(checkpoint_path)
         self.model.eval()
-        
-        # Initialize ROUGE scorer
+
         self.scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
 
     def _load_model(self, checkpoint_path: str) -> CrossLingualSummarizer:
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
-            
+
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         model = CrossLingualSummarizer(self.config)
-        
+
         if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
             state_dict = checkpoint['model_state_dict']
         else:
             state_dict = checkpoint
-            
+
         model.model.load_state_dict(state_dict, strict=False)
         return model.to(self.device)
 
     def generate_summary(self, text: str, lang: str) -> str:
-        # Add language token if not present
         lang_token = f"<{lang}>"
         if not text.startswith(lang_token):
             text = f"{lang_token} {text}"
-            
+
         inputs = self.tokenizer(
             text,
             max_length=self.config['max_length'],
@@ -54,7 +58,7 @@ class SummaryTester:
             truncation=True,
             return_tensors='pt'
         ).to(self.device)
-        
+
         with torch.no_grad():
             output_ids = self.model.generate_summary(
                 inputs['input_ids'],
@@ -62,13 +66,17 @@ class SummaryTester:
                 num_beams=4,
                 max_length=550,
                 min_length=10,
-                no_repeat_ngram_size=5,
+                no_repeat_ngram_size=6, 
                 length_penalty=1.0
             )
-            
-        return self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
+
+        generated_text = self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
+        return clean_generated_summary(generated_text)
 
     def evaluate_summary(self, generated: str, reference: str) -> Dict[str, Any]:
+        """
+        Evaluates the generated summary against a reference using ROUGE scores.
+        """
         scores = self.scorer.score(reference, generated)
         return {
             'rouge1': scores['rouge1'].fmeasure,
@@ -76,56 +84,56 @@ class SummaryTester:
             'rougeL': scores['rougeL'].fmeasure
         }
 
+
 def run_tests():
+    """
+    Runs tests on predefined cases and displays results.
+    """
     # Test data
     test_cases = [
-    {   "lang": "al", 
-        "text": "Një grua e re që humbi shikimin në moshën 12 vjeç ka ndihmuar për të përmirësuar të drejtat e njerëzve me aftësi të kufizuara. Pavarësisht sfidave që ka përjetuar, ajo ndoqi studimet e larta dhe fitoi një diplomë në psikologji. Përpjekjet e saj çuan në krijimin e një fondacioni që mbështet individët me aftësi të kufizuara, duke promovuar përfshirjen dhe aksesin në shkolla dhe vende pune. Përmes përpjekjeve të saj për mbrojtjen e të drejtave të njerëzve me aftësi të kufizuara, ajo është njohur me disa çmime, duke u bërë simbol shprese për shumë njerëz.", 
-        "reference": "Një grua e re që humbi shikimin në moshën 12 vjeç u bë avokate për të drejtat e personave me aftësi të kufizuara, duke fituar një diplomë në psikologji dhe duke krijuar një fondacion për të promovuar përfshirjen dhe qasjen." 
-    },
-    {
-        "lang": "al",
-        "text": "Një grup studentësh nga Shqipëria ka fituar një konkurs ndërkombëtar të robotikës. Ata krijuan një robot që mund të ndihmojë në operacionet e shpëtimit pas katastrofave natyrore. Roboti është i pajisur me sensorë të avancuar dhe mund të lëvizë në terrene të vështira. Ky sukses është një dëshmi e aftësive dhe inovacionit të të rinjve shqiptarë në fushën e teknologjisë.",
-        "reference": "Një grup studentësh shqiptarë ka fituar një konkurs ndërkombëtar të robotikës me një robot që ndihmon në operacionet e shpëtimit pas katastrofave natyrore, duke dëshmuar aftësitë dhe inovacionin e tyre."
-    },
-    {
-        "lang": "al",
-        "text": "Një artist i ri shqiptar ka fituar një çmim ndërkombëtar për pikturat e tij. Ai është njohur për stilin e tij unik dhe përdorimin e ngjyrave të gjalla. Pikturat e tij janë ekspozuar në galeri të ndryshme në mbarë botën dhe kanë marrë vlerësime të larta nga kritikët. Artisti shpreson të frymëzojë të rinjtë e tjerë për të ndjekur pasionet e tyre artistike.",
-        "reference": "Një artist shqiptar ka fituar një çmim ndërkombëtar për pikturat e tij, të njohura për stilin unik dhe ngjyrat e gjalla, dhe ka ekspozuar në galeri të ndryshme në mbarë botën."
-    },
-    {
-        "lang": "al",
-        "text": "Një ekip shkencëtarësh ka zbuluar një metodë të re për të luftuar ndryshimet klimatike. Ata kanë zhvilluar një teknologji që kap dhe ruan dioksidin e karbonit nga atmosfera. Kjo teknologji mund të ndihmojë në reduktimin e emetimeve të gazrave serë dhe të ngadalësojë ngrohjen globale. Shkencëtarët shpresojnë se kjo metodë do të adoptohet gjerësisht në të ardhmen për të mbrojtur planetin tonë.",
-        "reference": "Një ekip shkencëtarësh ka zhvilluar një teknologji për të kapur dhe ruajtur dioksidin e karbonit nga atmosfera, duke ndihmuar në luftën kundër ndryshimeve klimatike dhe ngrohjes globale."
-    }
+        # {   
+        #     "lang": "al", 
+        #     "text": "Një grua e re që humbi shikimin në moshën 12 vjeç ka ndihmuar për të përmirësuar të drejtat e njerëzve me aftësi të kufizuara. Pavarësisht sfidave që ka përjetuar, ajo ndoqi studimet e larta dhe fitoi një diplomë në psikologji. Përpjekjet e saj çuan në krijimin e një fondacioni që mbështet individët me aftësi të kufizuara, duke promovuar përfshirjen dhe aksesin në shkolla dhe vende pune. Përmes përpjekjeve të saj për mbrojtjen e të drejtave të njerëzve me aftësi të kufizuara, ajo është njohur me disa çmime, duke u bërë simbol shprese për shumë njerëz.", 
+        #     "reference": "Një grua e re që humbi shikimin në moshën 12 vjeç u bë avokate për të drejtat e personave me aftësi të kufizuara, duke fituar një diplomë në psikologji dhe duke krijuar një fondacion për të promovuar përfshirjen dhe qasjen." 
+        # },
+        # {
+        #     "lang": "al",
+        #     "text": "Një mësues në një shkollë të vogël në veri të Shqipërisë ka implementuar një metodë të re mësimdhënieje për të ndihmuar nxënësit të mësojnë më mirë. Duke përdorur teknologjinë dhe qasjen praktike, ai ka arritur të rrisë përfshirjen dhe rezultatet e nxënësve. Kjo qasje është vlerësuar nga komuniteti lokal dhe është propozuar për t'u përdorur edhe në shkolla të tjera.",
+        #     "reference": "Një mësues në veri të Shqipërisë përdori teknologjinë për të rritur përfshirjen dhe rezultatet e nxënësve, duke implementuar një metodë të re mësimdhënieje."
+        # },
+        # {   
+        #     "lang": "al", 
+        #     "text": "Një grua shqiptare që ka kaluar vite si emigrante ka hapur një biznes të suksesshëm në Shqipëri. Ajo përdori përvojën e saj për të krijuar një kompani që mbështet gratë sipërmarrëse duke ofruar trajnime dhe burime për të filluar biznese të reja. Kompania e saj është bërë një shembull frymëzimi për të rinjtë dhe gratë në të gjithë vendin.", 
+        #     "reference": "Një grua shqiptare emigrante hapi një biznes të suksesshëm në Shqipëri, duke mbështetur gratë sipërmarrëse me trajnime dhe burime."
+        # },
+        {
+            "lang": "al",
+            "text": "Një startup inovativ në Tiranë ka zhvilluar një aplikacion që ndihmon fermerët të monitorojnë kushtet e tokës dhe të optimizojnë ujitjen. Aplikacioni përdor sensorë të vendosur në tokë për të matur lagështirën dhe përbërjen kimike, duke u dërguar fermerëve të dhëna në kohë reale përmes telefonave të tyre. Që nga lansimi para gjashtë muajsh, 500 fermerë kanë adoptuar këtë teknologji, duke raportuar kursime të konsiderueshme në ujë dhe rritje të prodhimit.",
+            "reference": "Një startup në Tiranë ka krijuar një aplikacion që përdor sensorë për të ndihmuar fermerët në monitorimin e kushteve të tokës dhe optimizimin e ujitjes."
+        }
     ]
-    
+
     tester = SummaryTester("checkpoints/best_model_20241218_075651.pt")
-    
+
     for case in test_cases:
         print(f"\nTesting {case['lang'].upper()} summarization:")
         print("-" * 50)
         print("Original text:")
         print(case['text'].strip())
-        
+
         try:
             summary = tester.generate_summary(case['text'], case['lang'])
             print("\nGenerated summary:")
             print(summary)
-            
+
             scores = tester.evaluate_summary(summary, case['reference'])
             print("\nROUGE scores:")
             for metric, score in scores.items():
                 print(f"{metric}: {score:.4f}")
-                
+
         except Exception as e:
             logger.error(f"Error processing {case['lang']} text: {str(e)}")
 
+
 if __name__ == "__main__":
     run_tests()
-
-
-
-# Input Text: Should contain sufficient detail and context to ensure a meaningful summary.
-# Reference Summary: Should capture key ideas, removing non-essential details.
-# The goal is to compare the generated summary with the reference summary and calculate ROUGE scores to measure performance.

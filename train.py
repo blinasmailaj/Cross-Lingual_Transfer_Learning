@@ -266,14 +266,6 @@ class TrainingManager:
                 for metric, score in rouge_scores.items():
                     logger.info(f"{metric}: {score:.4f}")
                 
-                # Save visualization
-                self.visualizer.plot_training_progress(
-                    self.train_losses,
-                    self.val_losses,
-                    list(range(1, epoch + 2))
-                )
-                self.visualizer.plot_rouge_scores(rouge_scores)
-                
                 # Check for best model
                 rouge_avg = np.mean(list(rouge_scores.values()))
                 if rouge_avg > self.best_rouge_score:

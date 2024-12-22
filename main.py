@@ -19,23 +19,17 @@ def set_seed(seed: int):
         torch.cuda.manual_seed_all(seed)
 
 def main():
-    # Load configuration
     config = get_config()
     
-    # Set random seed for reproducibility
     set_seed(config['seed'])
     
-    # Create output directories
     os.makedirs(config['checkpoint_dir'], exist_ok=True)
     os.makedirs(config['output_dir'], exist_ok=True)
     
-    # Set up device
     device = torch.device(config['device'])
-    print(f"Using device: {device}")
+
     
-    # Initialize tokenizer
     tokenizer = MT5Tokenizer.from_pretrained(config['model_name'])
-    # Add special tokens if needed
     tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     
     # Load datasets
@@ -72,37 +66,28 @@ def main():
         device=device,
         tokenizer=tokenizer,
     )
-    # Load configuration
     config = get_config()
     
-    # Set random seed for reproducibility
     set_seed(config['seed'])
     
-    # Create output directories
     os.makedirs(config['checkpoint_dir'], exist_ok=True)
     os.makedirs(config['output_dir'], exist_ok=True)
     
     if config['use_wandb']:
         wandb.init(project=config['wandb_project'], config=config)
     
-    # Set up device
     device = torch.device(config['device'])
-    print(f"Using device: {device}")
     
-    # Initialize tokenizer
     tokenizer = MT5Tokenizer.from_pretrained(config['model_name'])
     
-    # Load datasets
     print("Loading datasets...")
     train_data, val_data, test_data = get_datasets(config)
     
-    # Create dataloaders
     print("Creating dataloaders...")
     train_loader, val_loader, test_loader = create_data_loaders(
         train_data, val_data, test_data, tokenizer, config
     )
     
-    # Initialize model
     print("Initializing model...")
     model = CrossLingualSummarizer(config).to(device)
     
@@ -112,7 +97,7 @@ def main():
         lr=config['learning_rate'],
         weight_decay=config['weight_decay']
     )
-    
+
     # Train model
     print("Starting training...")
     train_model(
@@ -125,12 +110,10 @@ def main():
         tokenizer=tokenizer,
     )
     
-    # Final evaluation
     print("Performing final evaluation...")
     checkpoint = torch.load(os.path.join(config['checkpoint_dir'], 'final_model_20241218_054329.pt'))
     model.load_state_dict(checkpoint['model_state_dict'])
     
-    # Generate example predictions
     print("Generating example predictions...")
     example_texts = [item['article'] for item in test_data[:5]]
     predictions = batch_predict(model, tokenizer, example_texts, config)
